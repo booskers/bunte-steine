@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#18212e">
+<title>Bunte Steine</title>
+<style>
+:root{
+  --bg:#18212e; --bg2:#0f151e; --hi:#ffd60a; --panel:#fffdf5; --blue:#0b4fb3; --t:60px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);
+  font-family:Roboto,"Segoe UI",system-ui,-apple-system,sans-serif;color:#111;
+  -webkit-user-select:none;user-select:none;touch-action:none;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
+body{background:radial-gradient(ellipse at 60% 40%,#24324a 0%,var(--bg) 55%,var(--bg2) 100%)}
+#board{position:fixed;inset:0}
+#frame{position:absolute;left:0;top:0;border-radius:16px;background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 2px rgba(255,255,255,.12)}
+
+/* stones: a thin gap between them, and touching stones of the same colour join into one shape (render() sets each
+   piece's sides and corners), so a group reads as one piece */
+.st{position:absolute;left:0;top:0;width:var(--t);height:var(--t);transition:transform .3s cubic-bezier(.3,.1,.3,1.1)}
+.st .in{position:absolute;inset:2px;border-radius:9px;background:var(--c);
+  display:flex;align-items:center;justify-content:center;transition:opacity .2s,filter .15s}
+.st svg{width:58%;height:58%;fill:var(--ink);stroke:rgba(0,0,0,.35);stroke-width:4;paint-order:stroke}
+.nosym .st svg,.nosym .mt svg{display:none}
+/* pressing a group (or a hint): everything else steps back */
+.picking .st:not(.sel) .in,.hinting .st:not(.hint) .in{opacity:.3}
+.st.sel .in{filter:brightness(1.18)}
+.st.one .in{animation:shake .4s}
+.st.hint .in{animation:hintp 1s ease-in-out infinite}
+.st.gone{transition:none}
+.st.gone .in{transform:scale(0) rotate(25deg);opacity:0;transition:transform .22s ease-in,opacity .22s ease-in}
+@keyframes shake{0%,100%{transform:none}20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+@keyframes hintp{0%,100%{filter:brightness(1)}50%{filter:brightness(1.4)}}
+
+.pts{position:fixed;left:0;top:0;z-index:2500;pointer-events:none;color:#fff;font-weight:900;font-size:40px;
+  text-shadow:0 0 3px #000,0 0 3px #000,0 2px 6px #000;animation:rise 1.1s ease-out forwards}
+@keyframes rise{0%{opacity:0;transform:translate(-50%,-30%) scale(.7)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}100%{opacity:0;transform:translate(-50%,-160%) scale(1)}}
+
+/* the left column: score and the three buttons */
+#scorebox{position:absolute;left:0;top:0;z-index:500;background:#000;color:#fff;border:3px solid #fff;border-radius:14px;
+  display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;line-height:1.1;padding:0 12px}
+#scorebox small{font-size:20px;font-weight:700;opacity:.9}
+#scorebox b{font-size:32px;font-weight:900}
+#scorebox .left{font-size:22px;font-weight:800;color:var(--hi);margin-left:10px}
+.tb{position:absolute;left:0;top:0;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:var(--panel);color:#111;border:3px solid #000;border-radius:14px;font:inherit;font-weight:800;font-size:21px;padding:0 2px;
+  box-shadow:0 2px 4px rgba(0,0,0,.4);touch-action:manipulation}
+.tb svg{width:34px;height:auto;max-height:45%;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.tb:active{transform:translateY(2px)}
+.tb[disabled]{opacity:.45}
+#bHint{background:var(--hi)}
+#bHint.pulse{animation:pulse 1.2s ease-in-out 4}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,214,10,.9)}50%{box-shadow:0 0 0 12px rgba(255,214,10,0)}}
+
+#count{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2800;background:#fff;color:#111;border:3px solid #000;border-radius:999px;
+  padding:6px 22px;font-size:24px;font-weight:900;display:none;pointer-events:none;white-space:nowrap}
+#toast{position:fixed;left:50%;bottom:14px;transform:translate(-50%,30px);opacity:0;pointer-events:none;z-index:3000;
+  background:rgba(0,0,0,.9);color:#fff;border:3px solid var(--hi);border-radius:16px;padding:12px 22px;
+  font-size:22px;font-weight:700;line-height:1.3;text-align:center;max-width:min(720px,80vw);transition:opacity .2s,transform .2s}
+#toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto;cursor:pointer}
+.close-hint{font-size:17px;color:#555;margin-top:6px}
+.recrow{display:flex;flex-direction:column;gap:2px;border:2px solid #ddd;border-radius:14px;padding:8px 14px;margin-bottom:10px;background:#fff}
+.recrow b{font-size:24px}
+#hand{position:fixed;left:0;top:0;z-index:4000;font-size:60px;line-height:1;pointer-events:none;display:none;
+  filter:drop-shadow(0 0 2px #000) drop-shadow(0 0 2px #000) drop-shadow(0 3px 6px rgba(0,0,0,.6))}
+
+/* dialogs */
+#dlg{position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,.62);display:none;align-items:center;justify-content:center;padding:8px}
+#dlg.open{display:flex}
+.panel{background:var(--panel);color:#111;border-radius:20px;border:3px solid #000;padding:16px 22px;
+  width:min(820px,96vw);max-height:calc(100vh - 16px);overflow:auto;font-size:21px;line-height:1.35;touch-action:pan-y}
+.panel h2{margin:0 0 6px;font-size:28px;line-height:1.15}
+.panel p{margin:0 0 8px}
+.panel .row{display:flex;gap:22px;align-items:center}
+.panel .txt{flex:1;min-width:0}
+.btns{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;margin-top:10px}
+button.big{min-height:60px;min-width:150px;padding:0 24px;border-radius:14px;border:3px solid #111;background:#fff;color:#111;
+  font:inherit;font-size:22px;font-weight:800;touch-action:manipulation}
+button.big.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+button.big:active{transform:translateY(2px)}
+.dots{display:flex;gap:8px;justify-content:center;margin-top:6px}
+.dots i{width:12px;height:12px;border-radius:50%;background:#bbb}
+.dots i.on{background:#111}
+.menu{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.menu button.big{width:100%;min-height:68px}
+.levels{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:6px}
+.lvl{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px;border:3px solid #111;border-radius:16px;background:#fff;font:inherit;color:#111}
+.lvl b{font-size:26px}
+.lvl span{font-size:18px;font-weight:700}
+.lvl .row1{display:flex;gap:4px}
+.lvl.cur{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue)}
+.sets{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin-top:6px}
+.set{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:62px;border:2px solid #ccc;border-radius:14px;padding:6px 12px;background:#fff;font:inherit;font-size:20px;font-weight:700;text-align:left;color:#111}
+.sw{flex:none;width:72px;height:40px;border-radius:20px;background:#888;position:relative;border:2px solid #111}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:30px;height:30px;border-radius:50%;background:#fff;border:2px solid #111;transition:left .15s}
+.set[aria-checked=true] .sw{background:#1a7f37}
+.set[aria-checked=true] .sw::after{left:35px}
+.stat{font-size:26px;font-weight:800}
+.stars{font-size:54px;letter-spacing:6px;line-height:1;margin:2px 0 8px}
+.stars i{font-style:normal;color:var(--hi);-webkit-text-stroke:2px #6b5300}
+.stars i.off{color:#d6d6d6;-webkit-text-stroke:2px #999}
+table.rec{border-collapse:collapse;font-size:21px;width:100%}
+table.rec td,table.rec th{border-bottom:2px solid #ddd;padding:8px 10px;text-align:left}
+
+/* little pictures in the guide */
+.demo{position:relative;width:200px;height:140px;flex:none;border-radius:14px;background:var(--bg)}
+.mt{position:absolute;width:52px;height:52px;border-radius:10px;background:var(--c);display:flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 3px 0 rgba(255,255,255,.35),inset 0 -4px 0 rgba(0,0,0,.25)}
+.mt svg{width:58%;height:58%;fill:var(--ink)}
+.dh{position:absolute;left:0;top:0;font-size:46px;line-height:1;filter:drop-shadow(0 0 2px #000);opacity:0}
+.tapdemo .g{animation:dgone 3.6s infinite}
+.tapdemo .dh{animation:dhand 3.6s infinite}
+@keyframes dgone{0%,30%{transform:none;opacity:1;box-shadow:inset 0 3px 0 rgba(255,255,255,.35),inset 0 -4px 0 rgba(0,0,0,.25)}
+  22%,34%{box-shadow:0 0 0 3px #fff,0 0 0 6px #000}44%,70%{transform:scale(0);opacity:0}82%,100%{transform:none;opacity:1}}
+@keyframes dhand{0%{transform:translate(150px,130px);opacity:0}10%{opacity:1}20%{transform:translate(76px,94px) scale(1)}25%{transform:translate(76px,94px) scale(.82)}34%{transform:translate(76px,94px) scale(1);opacity:1}46%,100%{transform:translate(140px,130px);opacity:0}}
+@keyframes dhand2{0%{transform:translate(150px,130px);opacity:0}10%{opacity:1}20%{transform:translate(46px,94px) scale(1)}25%{transform:translate(46px,94px) scale(.82)}34%{transform:translate(46px,94px) scale(1);opacity:1}46%,100%{transform:translate(140px,130px);opacity:0}}
+.falldemo .g{animation:dgone2 3.6s infinite}
+.falldemo .f{animation:dfall 3.6s infinite}
+.falldemo .dh{animation:dhand 3.6s infinite}
+@keyframes dgone2{0%,32%{transform:none;opacity:1}44%,70%{transform:scale(0);opacity:0}82%,100%{transform:none;opacity:1}}
+@keyframes dfall{0%,46%{transform:none}58%,70%{transform:translateY(56px);opacity:1}76%{opacity:0;transform:translateY(56px)}77%{transform:none;opacity:0}82%,100%{transform:none;opacity:1}}
+
+#rotate{position:fixed;inset:0;z-index:9000;background:var(--bg);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;font-size:28px;font-weight:800;padding:24px;gap:24px}
+#rotate .ph{width:70px;height:120px;border:6px solid #fff;border-radius:14px;animation:turn 2.4s ease-in-out infinite}
+@keyframes turn{0%,20%{transform:rotate(-90deg)}55%,100%{transform:rotate(0)}}
+@media (orientation:landscape){#rotate{display:flex}}
+/* a narrow upright screen: pictures above the text, one big button per row */
+@media (max-width:600px){.panel{padding:14px 16px}.panel .row{flex-direction:column;align-items:center;gap:10px}.menu,.sets,.levels{grid-template-columns:1fr}.btns button.big{flex:1 1 140px;min-width:0;padding:0 10px;font-size:20px}.lvl{flex-direction:row;justify-content:space-between;flex-wrap:wrap}.panel .set{width:100%}}
+.upd{margin-top:14px;padding-top:10px;border-top:2px solid rgba(0,0,0,.18)}
+.upd h3{margin:0 0 4px;font-size:1.1em}
+.upd p{margin:4px 0 10px}
+.upd .big{width:100%;margin:0 0 10px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="k0" viewBox="0 0 100 100"><circle cx="50" cy="50" r="36"/></symbol>
+    <symbol id="k1" viewBox="0 0 100 100"><rect x="17" y="17" width="66" height="66" rx="6"/></symbol>
+    <symbol id="k2" viewBox="0 0 100 100"><path d="M50 10 92 86H8z"/></symbol>
+    <symbol id="k3" viewBox="0 0 100 100"><path d="M50 4l13 30 33 3-25 22 8 32-29-17-29 17 8-32L4 37l33-3z"/></symbol>
+    <symbol id="k5" viewBox="0 0 100 100"><path d="M50 4 94 50 50 96 6 50z"/></symbol>
+    <symbol id="k4" viewBox="0 0 100 100"><path d="M50 90C24 70 6 54 6 33 6 19 17 9 30 9c9 0 16 5 20 13 4-8 11-13 20-13 13 0 24 10 24 24 0 21-18 37-44 57z"/></symbol>
+  </defs>
+</svg>
+
+<div id="board" aria-label="Spielfeld"><div id="frame"></div></div>
+<div id="scorebox" aria-live="polite"><small>Punkte</small><b id="score">0</b><span class="left" id="left"></span></div>
+<button class="tb" id="bUndo" aria-label="Letzten Zug zurücknehmen">
+  <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Zurück</button>
+<button class="tb" id="bHint" aria-label="Eine gute Gruppe zeigen">
+  <svg viewBox="0 0 24 24"><path d="M9 18h6M10 21.5h4M12 2.5a6.5 6.5 0 0 0-4 11.6c.8.7 1 1.5 1 2.4h6c0-.9.2-1.7 1-2.4a6.5 6.5 0 0 0-4-11.6z"/></svg>Tipp</button>
+<button class="tb" id="bMenu" aria-label="Menü: neues Spiel, Hilfe und Einstellungen">
+  <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Menü</button>
+<div id="count"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="hand" aria-hidden="true">👆</div>
+<div id="dlg" role="dialog" aria-modal="true"></div>
+<div id="rotate"><div class="ph"></div>Bitte halten Sie Ihr Handy aufrecht,<br>um zu spielen.</div>
+
+<script>
+'use strict';
+/* ------------------------------------------------------------------ basics */
+const $ = s => document.querySelector(s);
+// English or German, following the phone's language (?lang=de / ?lang=en tries the other one)
+const DE = /^de\b/i.test(new URLSearchParams(location.search).get('lang') || navigator.language || '');
+const tx = (de, en) => DE ? de : en;
+document.documentElement.lang = DE ? 'de' : 'en';
+const board = $('#board');
+function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+// each colour has its own shape too, so the colours never have to be told apart by colour alone
+const KINDS = [
+  { c: '#d7263d', ink: '#fff', many: tx('roten Kreise', 'red circles'), plain: tx('roten Steine', 'red stones'), name: tx('Rot', 'Red'), shape: tx('Kreis', 'circle') },
+  { c: '#1f6fd1', ink: '#fff', many: tx('blauen Quadrate', 'blue squares'), plain: tx('blauen Steine', 'blue stones'), name: tx('Blau', 'Blue'), shape: tx('Quadrat', 'square') },
+  { c: '#f6c90e', ink: '#2b2100', many: tx('gelben Dreiecke', 'yellow triangles'), plain: tx('gelben Steine', 'yellow stones'), name: tx('Gelb', 'Yellow'), shape: tx('Dreieck', 'triangle') },
+  { c: '#1e9e4a', ink: '#fff', many: tx('grünen Sterne', 'green stars'), plain: tx('grünen Steine', 'green stones'), name: tx('Grün', 'Green'), shape: tx('Stern', 'star') },
+  { c: '#9b46c4', ink: '#fff', many: tx('lila Herzen', 'purple hearts'), plain: tx('lila Steine', 'purple stones'), name: tx('Lila', 'Purple'), shape: tx('Herz', 'heart') },
+  { c: '#0fa3b8', ink: '#fff', many: tx('türkisen Rauten', 'turquoise diamonds'), plain: tx('türkisen Steine', 'turquoise stones'), name: tx('Türkis', 'Turquoise'), shape: tx('Raute', 'diamond') }
+];
+const stones = n => n + (n === 1 ? tx(' Stein', ' stone') : tx(' Steine', ' stones'));
+// the symbols are optional (off at first, Einstellungen turns them on): the words follow what is on the stones
+const many = k => prefs.sym ? KINDS[k].many : KINDS[k].plain;
+const label = k => prefs.sym ? KINDS[k].name + ', ' + KINDS[k].shape : KINDS[k].name;
+const LEVELS = {
+  1: { name: tx('Leicht', 'Easy'), cols: 5, rows: 8, k: 3 },
+  2: { name: tx('Mittel', 'Medium'), cols: 6, rows: 10, k: 4 },
+  3: { name: tx('Schwer', 'Hard'), cols: 7, rows: 12, k: 5 },
+  4: { name: tx('Sehr schwer', 'Extra hard'), cols: 8, rows: 13, k: 6 }
+};
+const prefs = Object.assign({ coach: true, sym: false, speak: false, sound: true, buzz: true }, load('st-prefs') || {});
+const recs = Object.assign({}, load('st-recs') || {});   // per level: best, played, cleared
+const tipsSeen = load('st-tips') || {};
+let INS = { l: 0, t: 0, r: 0, b: 0 };
+
+/* ------------------------------------------------------------------ the game
+   cols: the columns from left to right, each from the bottom up. Stones fall down, empty columns close up to the left. */
+let S = null, U = [], lastMoveAt = 0, busy = false;
+const pointsFor = n => n * (n - 1);
+function deal(lvl) {
+  const L = LEVELS[lvl]; let id = 0;
+  const cols = [];
+  for (let c = 0; c < L.cols; c++) { const col = []; for (let r = 0; r < L.rows; r++) col.push({ id: id++, k: Math.floor(Math.random() * L.k) }); cols.push(col); }
+  S = { lvl, cols, score: 0, moves: 0, total: L.cols * L.rows, over: false };
+  U = [];
+  const R = rec(lvl); R.played++; store('st-recs', recs);
+}
+function rec(lvl) { return recs[lvl] || (recs[lvl] = { best: 0, played: 0, cleared: 0 }); }
+const stonesLeft = () => S.cols.reduce((a, c) => a + c.length, 0);
+function groupAt(c, r) {
+  const k = S.cols[c][r].k, seen = new Set([c + ',' + r]), out = [], stack = [[c, r]];
+  while (stack.length) {
+    const [x, y] = stack.pop(); out.push([x, y]);
+    for (const [a, b] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      const key = a + ',' + b;
+      if (seen.has(key) || !S.cols[a] || !S.cols[a][b] || S.cols[a][b].k !== k) continue;
+      seen.add(key); stack.push([a, b]);
+    }
+  }
+  return out;
+}
+function allGroups() {
+  const seen = new Set(), out = [];
+  S.cols.forEach((col, c) => col.forEach((_, r) => {
+    if (seen.has(c + ',' + r)) return;
+    const g = groupAt(c, r); g.forEach(([x, y]) => seen.add(x + ',' + y));
+    if (g.length > 1) out.push(g);
+  }));
+  return out;
+}
+function locate(id) {
+  for (let c = 0; c < S.cols.length; c++) { const r = S.cols[c].findIndex(s => s.id === id); if (r >= 0) return [c, r]; }
+  return null;
+}
+function removeGroup(g) {
+  U.push(JSON.stringify(S)); if (U.length > 200) U.shift();
+  const n = g.length, k = S.cols[g[0][0]][g[0][1]].k;
+  const ids = new Set(g.map(([c, r]) => S.cols[c][r].id));
+  // where the points float up: the middle of the group
+  const mid = g.reduce((a, [c, r]) => [a[0] + c / n, a[1] + r / n], [0, 0]);
+  S.cols = S.cols.map(col => col.filter(s => !ids.has(s.id))).filter(col => col.length);
+  const pts = pointsFor(n);
+  S.score += pts; S.moves++; lastMoveAt = performance.now();
+  for (const key in conf) conf[key] = 0;
+  floatPoints('+' + pts, X(mid[0]) + T / 2, Y(mid[1]) + T / 2);
+  sfx(n >= 8 ? 'big' : 'pop'); buzz(n >= 8 ? [60, 50, 90] : 40);
+  if (prefs.speak) say(n + ' ' + many(k));
+  if (n >= 10) toast(tx(['Großartig!', 'Super!', 'Wunderbar!'], ['Great!', 'Super!', 'Wonderful!'])[S.moves % 3] + ' ' + tx(n + ' Steine auf einmal!', n + ' stones at once!'), 2200);
+  render(ids);
+  save();
+  busy = true;
+  setTimeout(() => { busy = false; checkOver(); }, 450);
+}
+function undo() {
+  if (busy) return;
+  if (!U.length) { toast(tx('Es gibt nichts zurückzunehmen.', 'There is nothing to undo.')); return; }
+  S = JSON.parse(U.pop()); S.over = false;
+  sfx('undo'); buzz(30); render(); save();
+}
+function checkOver() {
+  if (S.over || allGroups().length) return;
+  S.over = true;
+  const left = stonesLeft(), R = rec(S.lvl);
+  if (!left) { S.score += 500; R.cleared++; }
+  const newBest = S.score > R.best; if (newBest) R.best = S.score;
+  store('st-recs', recs); save(); render();
+  const stars = !left ? 3 : left <= Math.max(3, S.total * .08) ? 2 : 1;
+  sfx(stars === 3 ? 'win' : 'end'); buzz([90, 80, 160]);
+  dialog({
+    title: !left ? tx('Alles abgeräumt! Wunderbar!', 'All cleared! Wonderful!') : stars === 2 ? tx('Sehr gut gespielt!', 'Very well played!') : tx('Gut gespielt!', 'Well played!'),
+    body: `<div class="stars" aria-label="${tx(stars + ' von 3 Sternen', stars + ' of 3 stars')}">${[1, 2, 3].map(i => `<i class="${i <= stars ? '' : 'off'}">★</i>`).join('')}</div>` +
+      (left ? tx(`<p>Es gibt keine Gruppen mehr. Übrig: <b>${stones(left)}</b>.</p>`, `<p>There are no more groups. Left over: <b>${stones(left)}</b>.</p>`)
+        : tx('<p>Kein einziger Stein ist übrig: 500 Extrapunkte!</p>', '<p>Not a single stone is left: 500 bonus points!</p>')) +
+      `<p class="stat">${S.score} ${tx('Punkte', 'points')}${newBest ? tx(' – neuer Rekord!', ' – a new record!') : ''}</p>`,
+    buttons: [{ label: tx('Zug zurück', 'Undo'), fn: undo }, { label: tx('Neues Spiel', 'New game'), primary: true, fn: () => chooseLevel(true) }]
+  });
+}
+function startNew(lvl) { deal(lvl); store('st-lvl', lvl); clearBoard(); geom(); render(); save(); }
+function save() { store('st-game', { S, U: U.slice(-60) }); }
+window.saveNow = save;
+
+/* ------------------------------------------------------------------ layout and drawing */
+let T = 60, BX = 0, BY = 0;
+const X = c => BX + c * T;
+const Y = r => BY + (LEVELS[S.lvl].rows - 1 - r) * T;
+const els = new Map();
+function geom() {
+  const W = innerWidth, H = innerHeight, L = LEVELS[S.lvl];
+  const padL = 10 + INS.l, padR = 10 + INS.r, padT = 10 + INS.t, padB = 10 + INS.b, gap = 10;
+  // upright: the points on top, the stones in the middle, Zurück · Tipp · Menü along the bottom
+  const sh = Math.max(56, Math.min(76, Math.round(H * .08))), bh = Math.max(76, Math.min(100, Math.round(H * .11)));
+  const aw = W - padL - padR, ah = H - padT - padB - sh - bh - 2 * gap;
+  T = Math.floor(Math.min(aw / L.cols, ah / L.rows));
+  // the stones sit on the floor of the play area, right above the buttons
+  BX = padL + Math.floor((aw - T * L.cols) / 2); BY = padT + sh + gap + (ah - T * L.rows);
+  document.documentElement.style.setProperty('--t', T + 'px');
+  const f = $('#frame'); Object.assign(f.style, { transform: `translate(${BX - 6}px,${BY - 6}px)`, width: T * L.cols + 12 + 'px', height: T * L.rows + 12 + 'px' });
+  const put = (el, x, y, w, h) => Object.assign(el.style, { transform: `translate(${x}px,${y}px)`, width: w + 'px', height: h + 'px' });
+  put($('#scorebox'), padL, padT, aw, sh);
+  const bw = Math.floor((aw - 2 * gap) / 3), by = H - padB - bh;
+  put($('#bUndo'), padL, by, bw, bh); put($('#bHint'), padL + bw + gap, by, bw, bh); put($('#bMenu'), padL + 2 * (bw + gap), by, bw, bh);
+  document.body.classList.toggle('nosym', !prefs.sym);
+}
+function clearBoard() { els.forEach(el => el.remove()); els.clear(); }
+function render(goneIds) {
+  const live = new Set();
+  S.cols.forEach((col, c) => col.forEach((s, r) => {
+    live.add(s.id);
+    let el = els.get(s.id);
+    if (!el) {
+      el = document.createElement('div'); el.className = 'st'; el.dataset.id = s.id;
+      const K = KINDS[s.k];
+      el.style.setProperty('--c', K.c); el.style.setProperty('--ink', K.ink);
+      el.setAttribute('role', 'button');
+      el.innerHTML = `<div class="in"><svg viewBox="0 0 100 100"><use href="#k${s.k}"/></svg></div>`;
+      el.style.transform = `translate(${X(c)}px,${Y(r)}px)`;
+      board.appendChild(el); els.set(s.id, el);
+    }
+    el.classList.remove('sel', 'hint', 'gone');
+    el.setAttribute('aria-label', label(s.k));
+    const tr = `translate(${X(c)}px,${Y(r)}px)`, shape = joined(c, r);
+    // the group pops first, then the rest falls and slides
+    const apply = () => { el.style.transform = tr; Object.assign(el.firstChild.style, shape); };
+    if (goneIds) setTimeout(apply, 170); else apply();
+  }));
+  els.forEach((el, id) => {
+    if (live.has(id)) return;
+    els.delete(id);
+    if (goneIds && goneIds.has(id)) { el.classList.add('gone'); setTimeout(() => el.remove(), 260); } else el.remove();
+  });
+  $('#score').textContent = S.score;
+  const n = stonesLeft();
+  $('#left').textContent = stones(n);
+  $('#bUndo').disabled = !U.length;
+}
+// a stone's sides reach its same-coloured neighbours, and only its free corners are round
+function joined(c, r) {
+  const k = S.cols[c][r].k, same = (a, b) => S.cols[a] && S.cols[a][b] && S.cols[a][b].k === k;
+  const u = same(c, r + 1), d = same(c, r - 1), l = same(c - 1, r), rt = same(c + 1, r);
+  const g = '2px', R = Math.round(T * .18) + 'px';
+  return { top: u ? '0' : g, bottom: d ? '-1px' : g, left: l ? '0' : g, right: rt ? '-1px' : g,
+    borderRadius: [!u && !l, !u && !rt, !d && !rt, !d && !l].map(x => x ? R : '0').join(' ') };
+}
+function floatPoints(text, x, y) {
+  const d = document.createElement('div'); d.className = 'pts'; d.textContent = text;
+  d.style.left = x + 'px'; d.style.top = y + 'px';
+  document.body.appendChild(d); setTimeout(() => d.remove(), 1200);
+}
+
+/* ------------------------------------------------------------------ touch: press shows the group, letting go removes it */
+let ptr = null, lastEmptyTap = 0;
+function showGroup(g, on) {
+  g.forEach(([c, r]) => { const el = els.get(S.cols[c][r].id); el && el.classList.toggle('sel', on); });
+  board.classList.toggle('picking', on);
+  const cnt = $('#count');
+  if (on) {
+    cnt.textContent = `${stones(g.length)} · +${pointsFor(g.length)} ${tx('Punkte', 'points')}`; cnt.style.display = 'block';
+    // never over the group itself: a group near the top gets the count at the bottom
+    const low = Math.max(...g.map(([, r]) => r)) < LEVELS[S.lvl].rows - 2;
+    cnt.style.top = low ? '10px' : 'auto'; cnt.style.bottom = low ? 'auto' : '10px';
+  }
+  else cnt.style.display = 'none';
+}
+board.addEventListener('pointerdown', e => {
+  wake();
+  if (ptr && ptr.id !== e.pointerId) { if (ptr.g) showGroup(ptr.g, false); clearTimeout(ptr.ht); ptr = null; confused('zoom'); return; }
+  if (busy || dlgOpen() || S.over) return;
+  clearHint();
+  const se = e.target.closest('.st');
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY };
+  try { board.setPointerCapture(e.pointerId); } catch (_) {}
+  if (!se) return;
+  const at = locate(+se.dataset.id); if (!at) return;
+  const g = groupAt(at[0], at[1]);
+  ptr.at = at; ptr.g = g.length > 1 ? g : null;
+  if (ptr.g) {
+    showGroup(g, true); sfx('press'); buzz(20);
+    const me = ptr;
+    me.ht = setTimeout(() => { if (ptr === me && !me.cancel) toast(tx('Jetzt den Finger loslassen –<br>dann verschwinden die hellen Steine.', 'Now lift your finger –<br>then the bright stones disappear.'), 3500); }, 2500);
+  }
+});
+board.addEventListener('pointermove', e => {
+  if (!ptr || e.pointerId !== ptr.id || ptr.cancel) return;
+  if (Math.hypot(e.clientX - ptr.x0, e.clientY - ptr.y0) > T * .8) {
+    ptr.cancel = true;
+    if (ptr.g) showGroup(ptr.g, false);
+  }
+});
+board.addEventListener('pointerup', e => {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const p = ptr; ptr = null; clearTimeout(p.ht);
+  if (p.cancel) { if (p.at) { if (!confused('swipe')) toast(tx('Steine lassen sich nicht schieben.<br><small>Tippen Sie einfach auf eine Gruppe.</small>', 'Stones can\'t be moved.<br><small>Just tap a group.</small>')); } return; }
+  const now = performance.now();
+  if (now - lastMoveAt < 450) { if (p.g) showGroup(p.g, false); confused('dbl'); return; }
+  if (p.g) { showGroup(p.g, false); removeGroup(p.g); return; }
+  if (p.at) {
+    const el = els.get(S.cols[p.at[0]][p.at[1]].id);
+    el.classList.remove('one'); void el.offsetWidth; el.classList.add('one');
+    sfx('bad'); buzz([70, 60, 70]);
+    if (!confused('single')) toast(tx('Ein Stein allein kann nicht weg.<br><small>Es braucht mindestens 2 gleiche, die sich berühren.</small>', 'A single stone can\'t go.<br><small>It takes at least 2 of the same colour that touch.</small>'));
+    return;
+  }
+  if (now - lastEmptyTap > 15000) conf.empty = 0;
+  lastEmptyTap = now; confused('empty');
+});
+board.addEventListener('pointercancel', e => {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  if (ptr.g) showGroup(ptr.g, false); clearTimeout(ptr.ht); ptr = null;
+});
+board.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ------------------------------------------------------------------ hint */
+let hintTimer = 0;
+function bestGroup() {
+  const gs = allGroups(); if (!gs.length) return null;
+  gs.sort((a, b) => b.length - a.length);
+  return gs[0];
+}
+function showHint() {
+  if (busy || S.over) return;
+  clearHint();
+  const g = bestGroup();
+  if (!g) { checkOver(); return; }
+  sfx('hint');
+  g.forEach(([c, r]) => els.get(S.cols[c][r].id).classList.add('hint'));
+  board.classList.add('hinting');
+  const k = S.cols[g[0][0]][g[0][1]].k;
+  const text = tx(`Tippen Sie auf die ${g.length} ${many(k)}.`, `Tap the ${g.length} ${many(k)}.`);
+  toast(text + tx('<br><small>Sie leuchten hell, der Rest ist abgedunkelt.</small>', '<br><small>They light up; the rest is dimmed.</small>'), 6000, text);
+  // the hand taps the stone nearest the middle of the group
+  const mid = g.reduce((a, [c, r]) => [a[0] + c / g.length, a[1] + r / g.length], [0, 0]);
+  const [c, r] = g.reduce((a, b) => Math.hypot(b[0] - mid[0], b[1] - mid[1]) < Math.hypot(a[0] - mid[0], a[1] - mid[1]) ? b : a);
+  handTap(X(c) + T / 2, Y(r) + T / 2);
+  hintTimer = setTimeout(clearHint, 8000);
+}
+function clearHint() {
+  clearTimeout(hintTimer);
+  document.querySelectorAll('.st.hint').forEach(e => e.classList.remove('hint'));
+  board.classList.remove('hinting');
+  const h = $('#hand'); h.getAnimations().forEach(a => a.cancel()); h.style.display = 'none';
+}
+function handTap(x, y) {
+  const h = $('#hand'); h.style.display = 'block';
+  const at = s => `translate(${x - 22}px,${y - 6}px) scale(${s})`;
+  h.animate([{ transform: at(1), opacity: 0 }, { transform: at(1), opacity: 1, offset: .3 }, { transform: at(.8), offset: .5 }, { transform: at(1), opacity: 1, offset: .7 }, { transform: at(1), opacity: 0 }],
+    { duration: 1300, iterations: 3 }).onfinish = () => h.style.display = 'none';
+}
+
+/* ------------------------------------------------------------------ the coach: notices when the gestures are not working out */
+const conf = { single: 0, swipe: 0, empty: 0, dbl: 0, zoom: 0 };
+const NEED = { single: 3, swipe: 2, empty: 3, dbl: 2, zoom: 1 };
+let lastTipAt = -1e9;
+function confused(kind) {
+  if (!prefs.coach) return false;   // the helper can be turned off in the settings
+  conf[kind]++;
+  if (conf[kind] < NEED[kind] || dlgOpen()) return false;
+  if ((tipsSeen[kind] || 0) >= 3 || performance.now() - lastTipAt < 20000) return false;
+  conf[kind] = 0; tipsSeen[kind] = (tipsSeen[kind] || 0) + 1; store('st-tips', tipsSeen);
+  lastTipAt = performance.now();
+  TIPS[kind]();
+  return true;
+}
+const showMe = { label: tx('Gruppe zeigen', 'Show me a group'), primary: true, fn: () => setTimeout(showHint, 250) };
+const gotIt = { label: tx('OK, verstanden', 'OK, got it'), primary: true };
+const TIPS = {
+  single: () => dialog({ tip: true, title: tx('Ein Stein allein kann nicht weg', 'A single stone can\'t go'), illus: tapDemo(),
+    body: tx('<p>Es braucht <b>mindestens 2 gleiche Steine</b>, die sich berühren – nebeneinander oder übereinander.</p><p>Tippen Sie auf den gelben Knopf <b>Tipp</b>, dann zeige ich Ihnen eine Gruppe.</p>',
+      '<p>It takes <b>at least 2 stones of the same colour</b> that touch – side by side or one above the other.</p><p>Tap the yellow <b>Hint</b> button and I will show you a group.</p>'),
+    buttons: [{ label: 'OK' }, showMe] }),
+  swipe: () => dialog({ tip: true, title: tx('Einfach antippen', 'Just tap'), illus: tapDemo(),
+    body: tx('<p>Die Steine lassen sich nicht schieben oder tauschen.</p><p>Tippen Sie kurz auf eine Gruppe gleicher Steine – ohne den Finger zu bewegen. Dann verschwindet die ganze Gruppe.</p>',
+      '<p>The stones can\'t be pushed or swapped.</p><p>Tap a group of matching stones briefly – without moving your finger. Then the whole group disappears.</p>'),
+    buttons: [gotIt] }),
+  empty: () => dialog({ tip: true, title: tx('Tippen Sie auf die Steine', 'Tap on the stones'), illus: tapDemo(),
+    body: tx('<p>Tippen Sie auf einen Stein, der einen gleichen Nachbarn hat. Dann verschwinden alle gleichen Steine, die zusammenhängen.</p>',
+      '<p>Tap a stone that has a neighbour of the same colour. Then all the matching stones that are joined to it disappear.</p>'),
+    buttons: [{ label: 'OK' }, showMe] }),
+  dbl: () => dialog({ tip: true, title: tx('Einmal tippen genügt', 'One tap is enough'), illus: tapDemo(),
+    body: tx('<p>Tippen Sie eine Gruppe nur einmal an. Ein zweites Tippen könnte aus Versehen eine andere Gruppe entfernen.</p><p>Falls das passiert, tippen Sie auf <b>Zurück</b>.</p>',
+      '<p>Tap a group only once. A second tap could remove another group by mistake.</p><p>If that happens, tap <b>Undo</b>.</p>'),
+    buttons: [gotIt] }),
+  zoom: () => dialog({ tip: true, title: tx('Steine zu klein?', 'Stones too small?'),
+    body: tx('<p>Die Steine füllen schon den ganzen Bildschirm, deshalb lässt sich nichts vergrößern.</p><p>Im leichten Spiel sind die Steine am größten. Möchten Sie ein leichtes Spiel beginnen?</p>',
+      '<p>The stones already fill the whole screen, so zooming is not possible.</p><p>The stones are biggest in an easy game. Would you like to start one?</p>'),
+    buttons: [{ label: tx('Nein, danke', 'No, thanks') }, { label: tx('Leichtes Spiel', 'Easy game'), primary: true, fn: () => confirmNew(1) }] })
+};
+let lastActive = performance.now(), idleShown = false;
+function wake() { lastActive = performance.now(); idleShown = false; }
+setInterval(() => {
+  if (!prefs.coach || idleShown || busy || !S || S.over || dlgOpen() || document.hidden) return;
+  if (performance.now() - lastActive > 45000) {
+    idleShown = true;
+    toast(tx('Brauchen Sie Hilfe? Tippen Sie auf den gelben Knopf <b>Tipp</b>.', 'Need a hand? Tap the yellow <b>Hint</b> button.'), 7000);
+    $('#bHint').classList.remove('pulse'); void $('#bHint').offsetWidth; $('#bHint').classList.add('pulse');
+  }
+}, 5000);
+
+/* ------------------------------------------------------------------ dialogs, messages, sound */
+const mt = (k, x, y, cls = '') => `<div class="mt ${cls}" style="left:${x}px;top:${y}px;--c:${KINDS[k].c};--ink:${KINDS[k].ink}"><svg viewBox="0 0 100 100"><use href="#k${k}"/></svg></div>`;
+const tapDemo = () => `<div class="demo tapdemo">${mt(1, 12, 16)}${mt(0, 72, 16, 'g')}${mt(2, 132, 16)}${mt(0, 12, 74, 'g')}${mt(0, 72, 74, 'g')}${mt(1, 132, 74)}<div class="dh">👆</div></div>`;
+const fallDemo = () => `<div class="demo falldemo">${mt(1, 42, 16, 'f')}${mt(2, 102, 16, 'f')}${mt(0, 42, 74, 'g')}${mt(0, 102, 74, 'g')}<div class="dh" style="animation:dhand2 3.6s infinite">👆</div></div>`;
+const kindsDemo = n => `<div class="demo" style="height:${n > 3 ? 136 : 80}px">${[...Array(n)].map((_, k) => mt(k, 12 + (k % 3) * 60, 14 + Math.floor(k / 3) * 60)).join('')}</div>`;
+const dlgOpen = () => $('#dlg').classList.contains('open');
+function dialog({ title, body, illus, buttons, tip, after: onShown }) {
+  const d = $('#dlg'); d.innerHTML = '';
+  // a helper window closes with a tap anywhere outside its buttons
+  if (tip) body += '<p class="close-hint">' + tx('Zum Schließen irgendwo tippen.', 'Tap anywhere to close.') + '</p>';
+  d.onclick = tip ? e => { if (!e.target.closest('button')) closeDlg(); } : null;
+  const p = document.createElement('div'); p.className = 'panel';
+  p.innerHTML = (illus ? `<div class="row"><div>${illus}</div><div class="txt"><h2>${title}</h2>${body}</div></div>` : `<h2>${title}</h2><div class="txt">${body}</div>`) + '<div class="btns"></div>';
+  buttons.forEach(b => {
+    const el = document.createElement('button'); el.className = 'big' + (b.primary ? ' primary' : ''); el.textContent = b.label;
+    el.onclick = () => { if (!b.keep) closeDlg(); b.fn && b.fn(); };
+    p.querySelector('.btns').appendChild(el);
+  });
+  d.appendChild(p); d.classList.add('open');
+  hideToast(); clearHint();
+  if (prefs.speak) say(title + '. ' + p.querySelector('.txt').innerText);
+  onShown && onShown(p);
+}
+function closeDlg() { $('#dlg').classList.remove('open'); $('#dlg').innerHTML = ''; wake(); }
+let toastT = 0;
+function toast(html, ms = 3200, speakText) {
+  const t = $('#toast'); t.innerHTML = html; t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(hideToast, ms);
+  if (prefs.speak) say(speakText || t.innerText);
+}
+function hideToast() { $('#toast').classList.remove('show'); }
+$('#toast').addEventListener('pointerdown', e => { e.stopPropagation(); hideToast(); });   // a tapped message goes away
+
+let AC = null;
+function tone(f, d, type = 'sine', vol = .07, delay = 0) {
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = AC.currentTime + delay, o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(.0001, t0 + d);
+    o.connect(g).connect(AC.destination); o.start(t0); o.stop(t0 + d);
+  } catch (e) {}
+}
+function sfx(k) {
+  if (!prefs.sound) return;
+  if (k === 'press') tone(440, .06, 'sine', .04);
+  else if (k === 'pop') { tone(620, .09); tone(830, .12, 'sine', .05, .06); }
+  else if (k === 'big') [620, 780, 930, 1240].forEach((f, i) => tone(f, .14, 'sine', .06, i * .06));
+  else if (k === 'bad') tone(190, .22, 'triangle', .1);
+  else if (k === 'undo') tone(360, .08);
+  else if (k === 'hint') tone(740, .12, 'sine', .05);
+  else if (k === 'end') [523, 659, 784].forEach((f, i) => tone(f, .3, 'sine', .06, i * .15));
+  else if (k === 'win') [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, .35, 'sine', .07, i * .14));
+}
+// the Android app vibrates natively (its web view ignores navigator.vibrate); a browser uses the web call
+function buzz(p) {
+  if (!prefs.buzz) return;
+  try { if (window.Android && Android.vibrate) Android.vibrate([].concat(p).join(',')); else if (navigator.vibrate) navigator.vibrate(p); } catch (e) {}
+}
+function say(text) {
+  if (!prefs.speak || !text) return;
+  text = String(text).replace(/\s+/g, ' ');
+  if (window.Android && Android.speak) { Android.speak(text); return; }
+  if (window.speechSynthesis) { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.rate = .9; u.lang = DE ? 'de-DE' : 'en-US'; speechSynthesis.speak(u); }
+}
+
+/* ------------------------------------------------------------------ menu, levels, settings, guide */
+function welcome(page = 0) {
+  const pages = [
+    { title: tx('Willkommen bei Bunte Steine', 'Welcome to Colorful Stones'), illus: tapDemo(),
+      body: tx('<p>Tippen Sie auf eine Gruppe von <b>2 oder mehr gleichen Steinen</b>, die sich berühren. Dann verschwindet die ganze Gruppe.</p><p>Ziel: Räumen Sie möglichst <b>alle Steine</b> ab.</p>',
+        '<p>Tap a group of <b>2 or more stones of the same colour</b> that touch. Then the whole group disappears.</p><p>The goal: clear away <b>as many stones as you can</b>.</p>') },
+    { title: tx('Die Steine rutschen nach', 'The stones slide down'), illus: fallDemo(),
+      body: tx('<p>Steine darüber fallen nach unten. Wird eine Spalte leer, rücken die anderen nach links zusammen.</p><p>Solange Ihr Finger auf dem Stein liegt, leuchtet die Gruppe hell. Erst beim <b>Loslassen</b> verschwindet sie.</p>',
+        '<p>Stones above fall down. When a column is empty, the others move together to the left.</p><p>While your finger rests on a stone, its group lights up. It only disappears when you <b>lift your finger</b>.</p>') },
+    { title: tx('Große Gruppen lohnen sich', 'Big groups pay off'), illus: kindsDemo(6),
+      body: tx('<p>Je größer die Gruppe, desto mehr Punkte. Nicht weiter? Tippen Sie auf <b>Tipp</b>. Ein Fehler? Tippen Sie auf <b>Zurück</b>.</p>' +
+          '<p>Farben schwer zu unterscheiden? Dann kann jede Farbe ein <b>eigenes Zeichen</b> bekommen:</p>',
+        '<p>The bigger the group, the more points. Stuck? Tap <b>Hint</b>. Made a mistake? Tap <b>Undo</b>.</p>' +
+          '<p>Colours hard to tell apart? Each colour can get <b>its own symbol</b>:</p>') +
+        '<button class="set" role="switch" id="wsym" aria-checked="' + prefs.sym + '"><span>' + tx('Zeichen auf den Steinen', 'Symbols on the stones') + '</span><span class="sw"></span></button>' }
+  ];
+  const pg = pages[page], lastPage = page === pages.length - 1;
+  dialog({ ...pg, after: p => { const b = p.querySelector('#wsym'); if (b) b.onclick = () => { prefs.sym = !prefs.sym; b.setAttribute('aria-checked', prefs.sym); savePrefs(); }; },
+    body: pg.body + '<div class="dots">' + pages.map((_, i) => `<i class="${i === page ? 'on' : ''}"></i>`).join('') + '</div>',
+    buttons: [...(page ? [{ label: tx('◀ Vorige Seite', '◀ Back'), keep: true, fn: () => welcome(page - 1) }] : [{ label: tx('Überspringen', 'Skip'), fn: () => store('st-welcomed', 1) }]),
+      lastPage ? { label: tx('Los geht\'s', 'Start playing'), primary: true, fn: () => store('st-welcomed', 1) } : { label: tx('Weiter ▶', 'Next ▶'), primary: true, keep: true, fn: () => welcome(page + 1) }] });
+}
+function chooseLevel(force) {
+  dialog({ title: tx('Neues Spiel – wie schwer?', 'New game – how hard?'), body: '<div class="levels">' + [1, 2, 3, 4].map(l => {
+      const L = LEVELS[l];
+      return `<button class="lvl${S && S.lvl === l ? ' cur' : ''}" data-l="${l}"><b>${L.name}</b><span>${L.k} ${tx('Farben', 'colours')} · ${stones(L.cols * L.rows)}</span>` +
+        `<span class="row1">${[...Array(L.k)].map((_, k) => `<span class="mt" style="position:relative;width:30px;height:30px;border-radius:6px;--c:${KINDS[k].c};--ink:${KINDS[k].ink}"><svg viewBox="0 0 100 100"><use href="#k${k}"/></svg></span>`).join('')}</span></button>`;
+    }).join('') + '</div>',
+    buttons: force ? [] : [{ label: tx('Abbrechen', 'Cancel') }],
+    after: p => p.querySelectorAll('.lvl').forEach(b => b.onclick = () => { closeDlg(); confirmNew(+b.dataset.l); }) });
+}
+function confirmNew(lvl) {
+  if (S && S.moves > 0 && !S.over) {
+    dialog({ title: tx('Neues Spiel beginnen?', 'Start a new game?'), body: tx('<p>Die Steine werden neu verteilt. Dieses Spiel endet dann.</p>', '<p>The stones will be dealt again. This game ends.</p>'),
+      buttons: [{ label: tx('Nein, weiterspielen', 'No, keep playing') }, { label: tx('Ja, neues Spiel', 'Yes, new game'), primary: true, fn: () => startNew(lvl) }] });
+  } else startNew(lvl);
+}
+function records() {
+  // one block per level, so it fits an upright phone
+  dialog({ title: tx('Ihre Rekorde', 'Your records'), body: [1, 2, 3, 4].map(l => {
+      const R = rec(l);
+      return `<div class="recrow"><b>${LEVELS[l].name}</b><span>${tx('Rekord', 'Best')}: <b>${R.best}</b> ${tx('Punkte', 'points')}</span>` +
+        `<span>${tx('Gespielt', 'Played')}: ${R.played} · ${tx('Alles abgeräumt', 'Cleared')}: ${R.cleared}</span></div>`;
+    }).join(''),
+    buttons: [{ label: tx('Schließen', 'Close'), primary: true }] });
+}
+function menu() {
+  if (busy) return;
+  dialog({ title: tx('Menü', 'Menu'), body: '<div class="menu">' +
+      `<button class="big primary" data-a="cont">▶ ${tx('Weiterspielen', 'Continue playing')}</button><button class="big" data-a="new">${tx('Neues Spiel', 'New game')}</button>` +
+      `<button class="big" data-a="help">${tx('Spielanleitung', 'How to play')}</button><button class="big" data-a="set">${tx('Einstellungen', 'Settings')}</button>` +
+      `<button class="big" data-a="rec">${tx('Ihre Rekorde', 'Your records')}</button><button class="big" data-a="hint">${tx('Gruppe zeigen', 'Show me a group')}</button></div>`,
+    buttons: [], after: p => p.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+      const a = b.dataset.a; closeDlg();
+      if (a === 'new') chooseLevel(); else if (a === 'help') welcome(); else if (a === 'set') settings();
+      else if (a === 'rec') records(); else if (a === 'hint') setTimeout(showHint, 200);
+    }) });
+}
+const SETTINGS = [['coach', tx('Hilfe-Hinweise', 'Helper tips')], ['sym', tx('Zeichen auf den Steinen', 'Symbols on the stones')],
+  ['speak', tx('Ansagen vorlesen', 'Read out loud')], ['sound', tx('Töne', 'Sounds')], ['buzz', 'Vibration']];
+function savePrefs() { store('st-prefs', prefs); geom(); render(); }
+function settings() {
+  dialog({ title: tx('Einstellungen', 'Settings'), body: '<div class="sets">' + SETTINGS.map(([k, l]) =>
+      `<button class="set" role="switch" data-k="${k}" aria-checked="${prefs[k]}"><span>${l}</span><span class="sw"></span></button>`).join('') + '</div><div class="upd" id="upd"></div>',
+    buttons: [{ label: tx('Fertig', 'Done'), primary: true }],
+    after: p => { updBlock(); p.querySelectorAll('.set').forEach(b => b.onclick = () => {
+      const k = b.dataset.k; prefs[k] = !prefs[k]; b.setAttribute('aria-checked', prefs[k]); savePrefs();
+      if (k === 'speak' && prefs.speak) say(tx('Ansagen werden jetzt vorgelesen.', 'Messages will be read out loud.'));
+      if (k === 'sound' && prefs.sound) sfx('pop');
+      if (k === 'buzz' && prefs.buzz) buzz(80);
+    }); } });
+}
+
+/* updates (inside the app only): they come quietly while the game is closed; switched on once here */
+function updBlock() {
+  const box = $('#upd'); if (!box) return;
+  if (!(window.Android && Android.updateInfo)) { box.remove(); return; }
+  let u = {}; try { u = JSON.parse(Android.updateInfo()); } catch (e) {}
+  let t = '<h3>Updates</h3><p>' + tx('Version ', 'Version ') + (u.current || '?') + '</p>';
+  if (u.auto) t += '<p>✓ ' + tx('Automatische Updates sind an. Neue Versionen kommen still, wenn das Spiel geschlossen ist.', 'Automatic updates are on. New versions arrive quietly while the game is closed.') + '</p>';
+  else if (u.quiet) t += '<p>' + (u.canInstall ? '' : tx('Zuerst „Aus dieser Quelle zulassen“ einschalten, dann zurückkommen. ', 'First switch on “Allow from this source”, then come back. ')) +
+    tx('Einmal einschalten (Android fragt einmal nach), danach kommen Updates still.', 'Switch on once (Android asks one time); after that updates arrive quietly.') +
+    '</p><button class="big primary" data-u="auto">' + tx('Automatische Updates einschalten', 'Turn on automatic updates') + '</button>';
+  else t += '<p>' + tx('Auf diesem Handy muss jedes Update einmal bestätigt werden.', 'On this phone every update has to be confirmed once.') + '</p>';
+  const st = { checking: tx('Suche nach Updates …', 'Looking for updates …'), downloading: tx('Update wird geladen …', 'Downloading the update …'),
+    offline: tx('Keine Verbindung. Später noch einmal versuchen.', 'No connection. Please try again later.'), failed: tx('Das Update hat nicht geklappt.', 'The update did not work.') }[u.status];
+  if (st) t += '<p>' + st + '</p>';
+  if (u.available) t += '<button class="big primary" data-u="now">' + tx('Version ', 'Install version ') + u.name + tx(' installieren', '') + '</button>';
+  t += '<button class="big" data-u="check">' + tx('Nach Updates suchen', 'Check for updates') + '</button>';
+  box.innerHTML = t;
+  box.querySelectorAll('[data-u]').forEach(b => b.onclick = () => {
+    const k = b.dataset.u;
+    if (k === 'auto') Android.autoUpdates(); else if (k === 'now') Android.installUpdate(); else Android.checkUpdate();
+  });
+}
+window.onUpdate = updBlock;
+
+// the fixed words in the page
+document.title = tx('Bunte Steine', 'Colorful Stones');
+$('#board').setAttribute('aria-label', tx('Spielfeld', 'Game board'));
+$('#scorebox small').textContent = tx('Punkte', 'Points');
+[['#bUndo', 'Zurück', 'Undo', 'Letzten Zug zurücknehmen', 'Undo the last move'], ['#bHint', 'Tipp', 'Hint', 'Eine gute Gruppe zeigen', 'Show me a good group'],
+ ['#bMenu', 'Menü', 'Menu', 'Menü: neues Spiel, Hilfe und Einstellungen', 'Menu: new game, help and settings']].forEach(([q, de, en, ade, aen]) => {
+  $(q).lastChild.textContent = tx(de, en); $(q).setAttribute('aria-label', tx(ade, aen));
+});
+$('#rotate').lastChild.remove(); $('#rotate').lastChild.remove(); $('#rotate').lastChild.remove();
+$('#rotate').insertAdjacentHTML('beforeend', tx('Bitte halten Sie Ihr Handy aufrecht,<br>um zu spielen.', 'Please hold your phone upright<br>to play.'));
+
+$('#bUndo').addEventListener('click', () => { wake(); undo(); });
+$('#bHint').addEventListener('click', () => { wake(); $('#bHint').classList.remove('pulse'); showHint(); });
+$('#bMenu').addEventListener('click', () => { wake(); menu(); });
+window.appBack = () => {
+  if (dlgOpen()) { closeDlg(); return true; }
+  if ($('#toast').classList.contains('show')) { hideToast(); return true; }
+  return false;
+};
+window.setInsets = (l, t, r, b) => { INS = { l: +l || 0, t: +t || 0, r: +r || 0, b: +b || 0 }; if (S) { geom(); render(); } };
+document.addEventListener('visibilitychange', () => { if (document.hidden && S) save(); });
+addEventListener('resize', () => { geom(); render(); });
+
+/* ------------------------------------------------------------------ start */
+function sound(st) {   // a saved game that can be trusted
+  try { return LEVELS[st.lvl] && Array.isArray(st.cols) && st.cols.length <= LEVELS[st.lvl].cols && st.cols.every(c => c.length <= LEVELS[st.lvl].rows) && st.cols.every(c => Array.isArray(c) && c.every(s => s && s.k >= 0 && s.k < LEVELS[st.lvl].k && Number.isInteger(s.id))); }
+  catch (e) { return false; }
+}
+const saved = load('st-game');
+if (saved && saved.S && !saved.S.over && sound(saved.S)) { S = saved.S; U = (saved.U || []).filter(u => { try { return sound(JSON.parse(u)); } catch (e) { return false; } }); }
+else deal(load('st-lvl') || 1);
+geom(); render();
+if (!load('st-welcomed')) setTimeout(() => welcome(0), 500);
+</script>
+</body>
+</html>

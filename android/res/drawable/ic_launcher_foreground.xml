@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- four stones (red, blue, yellow, green) in the launcher's safe middle -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFD7263D" android:pathData="M33,31h17a4,4 0 0 1 4,4v17h-21a4,4 0 0 1 -4,-4v-13a4,4 0 0 1 4,-4z" />
+    <path android:fillColor="#FF1F6FD1" android:pathData="M56,31h17a4,4 0 0 1 4,4v13a4,4 0 0 1 -4,4h-17a2,2 0 0 1 -2,-2v-17a2,2 0 0 1 2,-2z" />
+    <path android:fillColor="#FFF6C90E" android:pathData="M33,54h17a2,2 0 0 1 2,2v17a2,2 0 0 1 -2,2h-17a4,4 0 0 1 -4,-4v-13a4,4 0 0 1 4,-4z" />
+    <path android:fillColor="#FF1E9E4A" android:pathData="M56,54h17a4,4 0 0 1 4,4v13a4,4 0 0 1 -4,4h-17a2,2 0 0 1 -2,-2v-17a2,2 0 0 1 2,-2z" />
+</vector>
