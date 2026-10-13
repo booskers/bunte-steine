@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 (2026-10-13)
+
+- Fixed: the game closed right after opening on Android 14 and 15. The background look for updates
+  needed one more Android permission (network state); without it Android stopped the app at the start.
+
 ## 1.2.0 (2026-10-09)
 
 The first public release.

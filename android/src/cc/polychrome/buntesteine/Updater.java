@@ -86,10 +86,13 @@ public class Updater {
 
     /** the hourly look in the background, kept across restarts of the phone */
     static void schedule(Context c) {
-        JobScheduler js = c.getSystemService(JobScheduler.class);
-        if (js == null || js.getPendingJob(JOB) != null) return;
-        js.schedule(new JobInfo.Builder(JOB, new ComponentName(c, Job.class))
-            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(EVERY).setPersisted(true).build());
+        // never at the cost of the game: if Android turns the job down, the game still opens (it also looks when it is left)
+        try {
+            JobScheduler js = c.getSystemService(JobScheduler.class);
+            if (js == null || js.getPendingJob(JOB) != null) return;
+            js.schedule(new JobInfo.Builder(JOB, new ComponentName(c, Job.class))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(EVERY).setPersisted(true).build());
+        } catch (RuntimeException e) { android.util.Log.w("Updater", "no background job", e); }
     }
 
     /** look for a newer version (at most hourly unless `byHand`), then install it quietly if the game isn't showing */

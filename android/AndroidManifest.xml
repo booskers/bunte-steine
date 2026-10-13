@@ -3,14 +3,16 @@
      (no internet needed); this is one full-screen activity, always upright. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cc.polychrome.buntesteine"
-    android:versionCode="3"
-    android:versionName="1.2.0">
+    android:versionCode="4"
+    android:versionName="1.2.1">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
     <!-- a short buzz when stones vanish or a lone stone can't (the page calls navigator.vibrate) -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- updates from the game's GitHub releases, installed quietly while the game is closed -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- the hourly look waits for a network: Android refuses such a job (and the app crashes) without this -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
